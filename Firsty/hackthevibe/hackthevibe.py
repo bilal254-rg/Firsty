@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+# Hack the Vibe — Mission Loader + Leaderboard + Timed Mode
+
+import os, sys, time, json, importlib.util, datetime
+
+SAVE_FILE = os.path.expanduser("~/.hackthevibe_save.json")
+LEADERBOARD_FILE = os.path.expanduser("~/.hackthevibe_leaderboard.json")
+MISSIONS_DIR = os.path.expanduser("~/Firsty/hackthevibe/missions")
+
+# Config: per-mission time limits (seconds). None => no time limit.
+MISSION_TIME_LIMITS = {
+    "mission01.py": 60,   # 1 minute to get speed bonus
+    "mission02.py": 45,   # 45s
+    "mission03.py": 120,  # 2 minutes
+}
+
+def slow(t): time.sleep(t)
+
+def save_progress(username, xp):
+    data = {"username": username, "xp": xp}
+    with open(SAVE_FILE, "w") as f:
+        json.dump(data, f)
+    print(f"\n💾 Progress saved: {xp} XP")
+    update_leaderboard(username, xp)
+
+def load_progress():
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as f:
+            return json.load(f)
+    return {"username": None, "xp": 0}
+
+def load_leaderboard():
+    if os.path.exists(LEADERBOARD_FILE):
+        with open(LEADERBOARD_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def update_leaderboard(username, xp):
+    lb = load_leaderboard()
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    # find existing entry
+    found = False
+    for entry in lb:
+        if entry.get("username") == username:
+            found = True
+            # update if this xp is higher or just update timestamp
+            if xp > entry.get("best_xp", 0):
+                entry["best_xp"] = xp
+            entry["last_updated"] = now
+            break
+    if not found:
+        lb.append({"username": username, "best_xp": xp, "last_updated": now})
+    # sort descending by best_xp
+    lb = sorted(lb, key=lambda e: e.get("best_xp", 0), reverse=True)
+    # keep top 50 to avoid huge files
+    lb = lb[:50]
+    with open(LEADERBOARD_FILE, "w") as f:
+        json.dump(lb, f, indent=2)
+
+def show_leaderboard():
+    lb = load_leaderboard()
+    if not lb:
+        print("\nNo leaderboard data yet. Be the first.")
+        return
+    print("\n🏆 Leaderboard (Top players)")
+    for i, e in enumerate(lb[:10], 1):
+        name = e.get("username")
+        best = e.get("best_xp", 0)
+        when = e.get("last_updated", "")
+        print(f" {i:2d}. {name:12s}  {best:4d} XP   (last: {when})")
+    print("")
+
+def caesar_decrypt(s, shift):
+    out = []
+    for ch in s:
+        if 'a' <= ch <= 'z':
+            out.append(chr((ord(ch)-97-shift)%26 + 97))
+        elif 'A' <= ch <= 'Z':
+            out.append(chr((ord(ch)-65-shift)%26 + 65))
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+def load_missions():
+    if not os.path.isdir(MISSIONS_DIR):
+        return []
+    files = sorted([f for f in os.listdir(MISSIONS_DIR) if f.endswith(".py")])
+    return files
+
+def run_mission(file, username, xp, timed_mode=False):
+    path = os.path.join(MISSIONS_DIR, file)
+    spec = importlib.util.spec_from_file_location("mission", path)
+    mission = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mission)
+    # measure time if timed_mode is True
+    start = time.time()
+    xp_before = xp
+    xp = mission.run(username, xp, save_progress, caesar_decrypt)
+    end = time.time()
+    elapsed = end - start
+    # check for speed bonus
+    limit = MISSION_TIME_LIMITS.get(file)
+    if timed_mode and limit:
+        if elapsed <= limit:
+            bonus = int(0.1 * (xp - xp_before)) if (xp - xp_before) > 0 else 10
+            # guaranteed minimum bonus
+            bonus = max(bonus, 10)
+            xp += bonus
+            print(f"\n⏱️  Speed bonus! You finished in {int(elapsed)}s (limit {limit}s). +{bonus} XP")
+            save_progress(username, xp)
+        else:
+            print(f"\n⏱️  No speed bonus. You took {int(elapsed)}s (limit {limit}s).")
+    return xp
+
+WELCOME = r'''
+ _     _            _   _  _   _   _   _   _
+| |   | |          | | | || | | | | | | | | |
+| |__ | | __ _  ___| |_| || |_| | | | | | | |
+|  _ \| |/ _` |/ __| __|__   _| | | | | | | |
+| |_) | | (_| | (__| |_   | |   |_| |_| |_| |
+|_.__/|_|\__,_|\___|\__|  |_|   \___/ \___/
+        Hack the Vibe — Campaign Hub
+'''
+
+def main():
+    print(WELCOME)
+    data = load_progress()
+    username = data.get("username")
+    xp = data.get("xp", 0)
+
+    if username:
+        print(f"Welcome back, {username}. Current XP: {xp}")
+        use_existing = input("Continue as this user? (y/n): ").strip().lower()
+        if use_existing != "y":
+            username = input("New username: ").strip() or "Silent Coder"
+            xp = 0
+    else:
+        username = input("Username: ").strip() or "Silent Coder"
+        xp = 0
+
+    print(f"\nVerifying identity for {username}...", end="", flush=True)
+    slow(0.5)
+    print(" ✓")
+    print(f"Welcome, {username}. Let's hack the vibe.\n")
+
+    while True:
+        missions = load_missions()
+        print("Menu:")
+        print("  1. Play a Mission")
+        print("  2. View Leaderboard")
+        print("  3. Show Save (your XP)")
+        print("  4. Exit")
+        sel = input("\nChoose an option (1-4): ").strip()
+        if sel == "1":
+            if not missions:
+                print("No missions found in 'missions/' folder.")
+                continue
+            print("\nAvailable Missions:")
+            for i, f in enumerate(missions, 1):
+                name = f.replace(".py","").capitalize()
+                limit = MISSION_TIME_LIMITS.get(f)
+                limit_info = f" (time limit: {limit}s)" if limit else ""
+                print(f"  {i}. {name}{limit_info}")
+            choice = input("\nSelect a mission number: ").strip()
+            if not choice.isdigit() or int(choice) not in range(1, len(missions)+1):
+                print("Invalid choice.")
+                continue
+            selected = missions[int(choice)-1]
+            tm = input("Enable TIMED MODE for speed bonus? (y/n): ").strip().lower() == "y"
+            xp = run_mission(selected, username, xp, timed_mode=tm)
+            print(f"\nMission complete. Total XP: {xp}\n")
+            continue
+        elif sel == "2":
+            show_leaderboard()
+            continue
+        elif sel == "3":
+            print(f"\nSaved user: {username}   XP: {xp}\nSave file: {SAVE_FILE}")
+            continue
+        elif sel == "4":
+            print("\nStay silent. Code clean. Later.\n")
+            return
+        else:
+            print("Invalid option.")
+            continue
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nSession terminated.")
+    finally:
+        print("\n🌀 Syncing progress to GitHub...")
+        os.system("python3 ~/Firsty/hackthevibe/autopush.py")
+        sys.exit(0)
