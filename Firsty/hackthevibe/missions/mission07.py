@@ -95,8 +95,6 @@ def run(username, xp, save_progress, caesar_decrypt):
 
 
 
-cd ~/Firsty/hackthevibe/missions
-cd ~/Firsty/hackthevibe/missions
 
 cat > mission07.py <<'PY'
 import time, random, sys
