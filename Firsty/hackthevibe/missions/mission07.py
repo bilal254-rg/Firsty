@@ -94,10 +94,8 @@ def run(username, xp, save_progress, caesar_decrypt):
 
 
 
-python3 ~/Firsty/hackthevibe/hackthevibe.pypython3 ~/Firsty/hackthevibe/hackthevibe.py
 
 cd ~/Firsty/hackthevibe/missions
-python3 ~/Firsty/hackthevibe/hackthevibe.py
 cd ~/Firsty/hackthevibe/missions
 
 cat > mission07.py <<'PY'
