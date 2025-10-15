@@ -1,0 +1,1 @@
+import sys,re,os,base64; m=sys.argv[1]; f=open(os.path.expanduser(f"~/Firsty/hackthevibe/missions/mission{int(m):02}.py")).read(); e=re.search(r"encoded\s*=\s*\"([A-Za-z0-9+/=]+)\"", f).group(1); d=base64.b64decode(e).decode(); print("Mission",m,"answer:", "".join(chr((ord(c)-97-3)%26+97) if c.islower() else chr((ord(c)-65-3)%26+65) if c.isupper() else c for c in d))
